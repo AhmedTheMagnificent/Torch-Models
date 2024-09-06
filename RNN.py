@@ -35,7 +35,7 @@ num_layers = 2
 hidden_size = 256  # Fixing variable name consistency
 learning_rate = 0.001
 batch_size = 64
-num_epochs = 2
+num_epochs = 5
 
 # Load MNIST dataset
 trainDataset = datasets.MNIST(root='datasets/', train=True, transform=transforms.ToTensor(), download=True)
