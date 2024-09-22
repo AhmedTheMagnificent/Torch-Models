@@ -3,22 +3,22 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.datasets as datasets
-from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-# Discriminator with convolutional layers
+# DCGAN Discriminator
 class Discriminator(nn.Module):
     def __init__(self, channels_img, features_d):
         super(Discriminator, self).__init__()
         self.disc = nn.Sequential(
-            nn.Conv2d(channels_img, features_d, 4, 2, 1),  # Input convolution
+            nn.Conv2d(channels_img, features_d, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(0.2),
             self._block(features_d, features_d * 2, 4, 2, 1),
             self._block(features_d * 2, features_d * 4, 4, 2, 1),
             self._block(features_d * 4, features_d * 8, 4, 2, 1),
             nn.Conv2d(features_d * 8, 1, kernel_size=4, stride=2, padding=0),
-            nn.Sigmoid(),  # Output a single scalar prediction
+            nn.Sigmoid(),
         )
 
     def _block(self, in_channels, out_channels, kernel_size, stride, padding):
@@ -29,28 +29,29 @@ class Discriminator(nn.Module):
                 kernel_size,
                 stride,
                 padding,
-                bias=False
+                bias=False,
             ),
-            nn.BatchNorm2d(out_channels),
+            nn.BatchNorm2d(out_channels),  # Added batch normalization
             nn.LeakyReLU(0.2),
         )
 
     def forward(self, x):
         return self.disc(x)
 
-# Generator with transposed convolutional layers
+
+# DCGAN Generator
 class Generator(nn.Module):
-    def __init__(self, z_dim, channels_img, features_g):
+    def __init__(self, channels_noise, channels_img, features_g):
         super(Generator, self).__init__()
         self.gen = nn.Sequential(
-            self._block(z_dim, features_g * 16, 4, 1, 0),  # First transpose convolution
-            self._block(features_g * 16, features_g * 8, 4, 2, 1),
-            self._block(features_g * 8, features_g * 4, 4, 2, 1),
-            self._block(features_g * 4, features_g * 2, 4, 2, 1),
+            self._block(channels_noise, features_g * 16, 4, 1, 0),  # 1x1 -> 4x4
+            self._block(features_g * 16, features_g * 8, 4, 2, 1),  # 4x4 -> 8x8
+            self._block(features_g * 8, features_g * 4, 4, 2, 1),  # 8x8 -> 16x16
+            self._block(features_g * 4, features_g * 2, 4, 2, 1),  # 16x16 -> 32x32
             nn.ConvTranspose2d(
                 features_g * 2, channels_img, kernel_size=4, stride=2, padding=1
-            ),
-            nn.Tanh(),  # Output image range [-1, 1]
+            ),  # 32x32 -> 64x64
+            nn.Tanh(),  # Output: 64x64
         )
 
     def _block(self, in_channels, out_channels, kernel_size, stride, padding):
@@ -61,35 +62,107 @@ class Generator(nn.Module):
                 kernel_size,
                 stride,
                 padding,
-                bias=False
+                bias=False,
             ),
-            nn.BatchNorm2d(out_channels),
+            nn.BatchNorm2d(out_channels),  # Added batch normalization
             nn.ReLU(),
         )
 
     def forward(self, x):
         return self.gen(x)
 
-# Initialize weights for model
+
 def initialize_weights(model):
     for m in model.modules():
-        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
             nn.init.normal_(m.weight.data, 0.0, 0.02)
 
-# Test function to verify the structure
-def test():
-    N, in_channels, H, W = 8, 3, 64, 64  # Batch size, channels, height, width
-    z_dim = 100
-    x = torch.randn((N, in_channels, H, W))  # Random image input for Discriminator
-    disc = Discriminator(in_channels, 8)  # Discriminator model
-    initialize_weights(disc)
-    assert disc(x).shape == (N, 1, 1, 1)  # Discriminator output should be [N, 1, 1, 1]
 
-    gen = Generator(z_dim, in_channels, 8)  # Generator model
-    initialize_weights(gen)
-    z = torch.randn((N, z_dim, 1, 1))  # Random noise input for Generator
-    assert gen(z).shape == (N, in_channels, H, W)  # Generator output should be [N, 3, 64, 64]
+# Displaying real and fake images using matplotlib
+def show_images(fake, real, epoch):
+    fake = fake.detach().cpu()
+    real = real.detach().cpu()
 
-    print("Success")
+    fig, axs = plt.subplots(2, 8, figsize=(10, 5))
+    for i in range(8):
+        axs[0, i].imshow(fake[i].squeeze(), cmap='gray')
+        axs[0, i].axis('off')
+        axs[1, i].imshow(real[i].squeeze(), cmap='gray')
+        axs[1, i].axis('off')
+    fig.suptitle(f"Epoch {epoch}")
+    plt.show()
 
-test()
+
+# Hyperparameters
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+LEARNING_RATE = 2e-4  # Adjusted learning rate for both generator and discriminator
+BATCH_SIZE = 128
+IMAGE_SIZE = 64
+CHANNELS_IMG = 1
+NOISE_DIM = 100
+NUM_EPOCHS = 5
+FEATURES_DISC = 64
+FEATURES_GEN = 64
+
+# Dataset and DataLoader
+transforms = transforms.Compose(
+    [
+        transforms.Resize(IMAGE_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5], [0.5]),
+    ]
+)
+
+dataset = datasets.MNIST(root="dataset/", train=True, transform=transforms, download=True)
+dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+# Initialize models and optimizer
+gen = Generator(NOISE_DIM, CHANNELS_IMG, FEATURES_GEN).to(device)
+disc = Discriminator(CHANNELS_IMG, FEATURES_DISC).to(device)
+initialize_weights(gen)
+initialize_weights(disc)
+
+opt_gen = optim.Adam(gen.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
+opt_disc = optim.Adam(disc.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))  # Adjusted learning rate
+criterion = nn.BCELoss()
+
+# Fixed noise for consistent visual comparison
+fixed_noise = torch.randn(32, NOISE_DIM, 1, 1).to(device)
+
+# Training loop
+gen.train()
+disc.train()
+
+for epoch in range(NUM_EPOCHS):
+    for batch_idx, (real, _) in enumerate(dataloader):
+        real = real.to(device)
+        noise = torch.randn(BATCH_SIZE, NOISE_DIM, 1, 1).to(device)
+        fake = gen(noise)
+
+        ### Train Discriminator: max log(D(x)) + log(1 - D(G(z)))
+        disc_real = disc(real).reshape(-1)
+        loss_disc_real = criterion(disc_real, torch.full_like(disc_real, 0.9))  # Label smoothing
+        disc_fake = disc(fake.detach()).reshape(-1)
+        loss_disc_fake = criterion(disc_fake, torch.zeros_like(disc_fake))
+        loss_disc = (loss_disc_real + loss_disc_fake) / 2
+        disc.zero_grad()
+        loss_disc.backward()
+        opt_disc.step()
+
+        ### Train Generator: min log(1 - D(G(z))) <-> max log(D(G(z)))
+        output = disc(fake).reshape(-1)
+        loss_gen = criterion(output, torch.ones_like(output))
+        gen.zero_grad()
+        loss_gen.backward()
+        opt_gen.step()
+
+        # Print losses occasionally and show generated images using matplotlib
+        if batch_idx % 100 == 0:
+            print(
+                f"Epoch [{epoch}/{NUM_EPOCHS}] Batch {batch_idx}/{len(dataloader)} "
+                f"Loss D: {loss_disc:.4f}, Loss G: {loss_gen:.4f}"
+            )
+
+            with torch.no_grad():
+                fake = gen(fixed_noise)
+                show_images(fake[:8], real[:8], epoch)
