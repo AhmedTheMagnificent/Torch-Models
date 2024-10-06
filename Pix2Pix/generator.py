@@ -1,24 +1,22 @@
-import torch 
+import torch
 import torch.nn as nn
 
 class Block(nn.Module):
     def __init__(self, in_channels, out_channels, down=True, act="relu", use_dropout=False):
         super(Block, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 4, 2, 1, bias=False, padding_mode="reflect"),
-            if down
-            else:
-                nn.ConvTranspose2d(in_channels, out_channels, 4, 2, 1, bias=False),
-                nn.BatchNorm2d(out_channels),
-                nn.ReLU() if act=="relu" else nn.LeakyReLU(0.2)
+            nn.Conv2d(in_channels, out_channels, 4, 2, 1, bias=False, padding_mode="reflect")
+            if down else nn.ConvTranspose2d(in_channels, out_channels, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU() if act == "relu" else nn.LeakyReLU(0.2)
         )
         self.use_dropout = use_dropout
         self.dropout = nn.Dropout(0.5)
-        
+
     def forward(self, x):
         x = self.conv(x)
         return self.dropout(x) if self.use_dropout else x
-    
+
 class Generator(nn.Module):
     def __init__(self, in_channels=3, features=64):
         super(Generator, self).__init__()
@@ -27,11 +25,11 @@ class Generator(nn.Module):
             nn.LeakyReLU(0.2)
         )
         self.down1 = Block(features, features*2, down=True, act="leaky", use_dropout=False)
-        self.down2 = Block(features*2, features*4, down=True, act="leaky", use_dropout=False)        
+        self.down2 = Block(features*2, features*4, down=True, act="leaky", use_dropout=False)
         self.down3 = Block(features*4, features*8, down=True, act="leaky", use_dropout=False)
         self.down4 = Block(features*8, features*8, down=True, act="leaky", use_dropout=False)
         self.down5 = Block(features*8, features*8, down=True, act="leaky", use_dropout=False)
-        self.down6 = Block(features*8, features*8*, down=True, act="leaky", use_dropout=False)
+        self.down6 = Block(features*8, features*8, down=True, act="leaky", use_dropout=False)  # Fixed typo
         self.bottleneck = nn.Sequential(
             nn.Conv2d(features*8, features*8, 4, 2, 1, padding_mode="reflect"),
             nn.ReLU()
@@ -47,7 +45,7 @@ class Generator(nn.Module):
             nn.ConvTranspose2d(features*2, in_channels, kernel_size=4, stride=2, padding=1),
             nn.Tanh()
         )
-        
+
     def forward(self, x):
         d1 = self.initial_down(x)
         d2 = self.down1(d1)
@@ -65,13 +63,11 @@ class Generator(nn.Module):
         up6 = self.up6(torch.cat([up5, d3], 1))
         up7 = self.up7(torch.cat([up6, d2], 1))
         return self.final_up(torch.cat([up7, d1], 1))
-    
-    
+
 def test():
     x = torch.randn([1, 3, 256, 256])
     model = Generator()
     pred = model(x)
     print(pred.shape)
-    
+
 test()
-       
